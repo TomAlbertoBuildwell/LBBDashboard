@@ -1,0 +1,29 @@
+{
+  "crons": [
+    {
+      "path": "/api/billing",
+      "schedule": "*/15 9-17 * * 1-5"
+    },
+    {
+      "path": "/api/enquiry-by-member",
+      "schedule": "*/15 9-17 * * 1-5"
+    },
+    {
+      "path": "/api/enquiries-by-team",
+      "schedule": "*/15 9-17 * * 1-5"
+    },
+    {
+      "path": "/api/monthly-sales",
+      "schedule": "*/15 9-17 * * 1-5"
+    },
+    {
+      "path": "/api/outgoing-enquiries",
+      "schedule": "*/15 9-17 * * 1-5"
+    },
+    {
+      "path": "/api/pipeline",
+      "schedule": "*/15 9-17 * * 1-5"
+    }
+  ]
+}
+

@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { formatCurrency } from '../utils/dashboardUtils.mjs';
+import { formatCurrency } from '../utils/csvUtils.mjs';
 
 const START_ANGLE = 270;
 const END_ANGLE = 90;

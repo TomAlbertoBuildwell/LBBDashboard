@@ -1,6 +1,6 @@
 import React from 'react';
 import { ResponsiveContainer, BarChart, XAxis, YAxis, Bar, CartesianGrid, Tooltip } from 'recharts';
-import { formatCurrency } from '../utils/dashboardUtils.mjs';
+import { formatCurrency } from '../utils/csvUtils.mjs';
 
 const SalesBarChart = ({ title, data }) => (
   <div className="bg-gray-800 rounded-lg p-6 border border-purple-500/30">
