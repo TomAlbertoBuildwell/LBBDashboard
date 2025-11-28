@@ -99,6 +99,12 @@ const fetchZohoCsv = async (viewId) => {
   ].join('/');
 
   const url = `https://${analyticsDomain}/api/${path}?${params.toString()}`;
+  console.log('[ZohoAnalytics] Export request', {
+    orgId,
+    workspace,
+    viewId,
+    url,
+  });
   const token = await getAccessToken();
 
   const response = await fetch(url, {
