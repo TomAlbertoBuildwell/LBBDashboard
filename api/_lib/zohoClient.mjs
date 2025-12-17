@@ -1,5 +1,7 @@
 const TOKEN_SAFETY_MARGIN_MS = 60 * 1000;
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_ASYNC_POLL_INTERVAL_MS = 5 * 1000;
+const DEFAULT_ASYNC_MAX_ATTEMPTS = 24;
 
 const getGlobalCache = () => {
   if (!globalThis.__zohoRuntimeCache) {
@@ -78,36 +80,162 @@ const getAccessToken = async () => {
   return payload.access_token;
 };
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const parseJsonQuietly = (text) => {
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    return null;
+  }
+};
+
+const isSyncNotAllowedError = (status, bodyText) => {
+  if (status !== 400) return false;
+  const payload = parseJsonQuietly(bodyText);
+  if (!payload) {
+    return bodyText.includes('SYNC_EXPORT_NOT_ALLOWED');
+  }
+  const summary = (payload.summary || payload.message || '').toString().toUpperCase();
+  const errorCode = payload?.data?.errorCode ?? payload?.errorCode;
+  return summary.includes('SYNC_EXPORT_NOT_ALLOWED') || errorCode === 8133;
+};
+
+const buildAuthHeaders = async (orgId, extra = {}) => {
+  const token = await getAccessToken();
+  return {
+    Authorization: `Zoho-oauthtoken ${token}`,
+    'ZANALYTICS-ORGID': orgId,
+    ...extra,
+  };
+};
+
 const fetchZohoCsv = async (viewId) => {
   const orgId = requireEnv('ZOHO_ORG_ID');
   const workspace = requireEnv('ZOHO_WORKSPACE');
   const analyticsDomain = process.env.ZOHO_ANALYTICS_DOMAIN || 'analyticsapi.zoho.com';
 
-  const config = JSON.stringify({
+  const config = {
     responseFormat: 'csv',
-  });
+  };
 
-  const encodedConfig = encodeURIComponent(config);
+  const encodedConfig = encodeURIComponent(JSON.stringify(config));
   const baseUrl = `https://${analyticsDomain}/restapi/v2/workspaces/${encodeURIComponent(
     workspace,
-  )}/views/${encodeURIComponent(viewId)}/data`;
-  const url = `${baseUrl}?CONFIG=${encodedConfig}`;
+  )}/views/${encodeURIComponent(viewId)}`;
+  const url = `${baseUrl}/data?CONFIG=${encodedConfig}`;
 
-  const token = await getAccessToken();
+  const headers = await buildAuthHeaders(orgId);
 
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Zoho-oauthtoken ${token}`,
-      'ZANALYTICS-ORGID': orgId,
-    },
-  });
+  const response = await fetch(url, { headers });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Zoho export failed (${response.status}): ${errorText}`);
+  if (response.ok) {
+    return response.text();
   }
 
-  return response.text();
+  const errorText = await response.text();
+  if (isSyncNotAllowedError(response.status, errorText)) {
+    return fetchZohoCsvAsync({
+      orgId,
+      workspace,
+      viewId,
+      analyticsDomain,
+      config,
+    });
+  }
+
+  throw new Error(`Zoho export failed (${response.status}): ${errorText}`);
+};
+
+const fetchZohoCsvAsync = async ({ orgId, workspace, viewId, analyticsDomain, config }) => {
+  const baseUrl = `https://${analyticsDomain}/restapi/v2/workspaces/${encodeURIComponent(
+    workspace,
+  )}/views/${encodeURIComponent(viewId)}`;
+  const startUrl = `${baseUrl}/export`;
+  const body = new URLSearchParams({
+    CONFIG: JSON.stringify(config),
+  }).toString();
+
+  const startHeaders = await buildAuthHeaders(orgId, {
+    'Content-Type': 'application/x-www-form-urlencoded',
+  });
+
+  const startResponse = await fetch(startUrl, {
+    method: 'POST',
+    headers: startHeaders,
+    body,
+  });
+  const startText = await startResponse.text();
+  if (!startResponse.ok) {
+    throw new Error(`Zoho async export start failed (${startResponse.status}): ${startText}`);
+  }
+
+  const startPayload = parseJsonQuietly(startText);
+  const jobId =
+    startPayload?.data?.jobId ??
+    startPayload?.data?.job_id ??
+    startPayload?.jobId ??
+    startPayload?.job_id;
+
+  if (!jobId) {
+    throw new Error(`Zoho async export start missing jobId: ${startText}`);
+  }
+
+  const pollInterval =
+    Number(process.env.ZOHO_EXPORT_POLL_INTERVAL_MS) || DEFAULT_ASYNC_POLL_INTERVAL_MS;
+  const maxAttempts =
+    Number(process.env.ZOHO_EXPORT_MAX_POLL_ATTEMPTS) || DEFAULT_ASYNC_MAX_ATTEMPTS;
+  const pollUrl = `${baseUrl}/export/${encodeURIComponent(jobId)}`;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (attempt > 0) {
+      await sleep(pollInterval);
+    }
+
+    const pollHeaders = await buildAuthHeaders(orgId);
+    const pollResponse = await fetch(pollUrl, { headers: pollHeaders });
+    const pollText = await pollResponse.text();
+    if (!pollResponse.ok) {
+      throw new Error(`Zoho async export status failed (${pollResponse.status}): ${pollText}`);
+    }
+
+    const pollPayload = parseJsonQuietly(pollText);
+    const pollData = pollPayload?.data ?? pollPayload;
+    const status = (pollData?.status || pollData?.state || '').toString().toUpperCase();
+
+    if (!status || ['IN_PROGRESS', 'INPROGRESS', 'QUEUED', 'RUNNING'].includes(status)) {
+      continue;
+    }
+
+    if (['COMPLETED', 'SUCCESS', 'FINISHED'].includes(status)) {
+      const downloadUrl =
+        pollData?.downloadUrl ||
+        pollData?.download_url ||
+        pollData?.fileUrl ||
+        pollData?.file_url ||
+        pollData?.downloadLink ||
+        pollData?.result?.downloadUrl;
+
+      if (!downloadUrl) {
+        throw new Error(`Zoho async export missing download URL: ${pollText}`);
+      }
+
+      const downloadHeaders = await buildAuthHeaders(orgId);
+      const fileResponse = await fetch(downloadUrl, { headers: downloadHeaders });
+      const fileText = await fileResponse.text();
+      if (!fileResponse.ok) {
+        throw new Error(`Zoho async export download failed (${fileResponse.status}): ${fileText}`);
+      }
+
+      return fileText;
+    }
+
+    if (['FAILED', 'ERROR', 'CANCELLED'].includes(status)) {
+      throw new Error(`Zoho async export failed with status ${status}: ${pollText}`);
+    }
+  }
+
+  throw new Error('Zoho async export did not complete before timeout');
 };
 
 const getDatasetFromCache = (cacheKey) => {
