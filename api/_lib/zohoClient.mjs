@@ -120,7 +120,7 @@ const fetchZohoCsv = async (viewId) => {
   };
 
   const encodedConfig = encodeURIComponent(JSON.stringify(config));
-  const baseUrl = `https://${analyticsDomain}/restapi/v2/workspaces/${encodeURIComponent(
+  const baseUrl = `https://${analyticsDomain}/restapi/v2/bulk/workspaces/${encodeURIComponent(
     workspace,
   )}/views/${encodeURIComponent(viewId)}`;
   const url = `${baseUrl}/data?CONFIG=${encodedConfig}`;
@@ -149,7 +149,7 @@ const fetchZohoCsv = async (viewId) => {
 };
 
 const fetchZohoCsvAsync = async ({ orgId, workspace, viewId, analyticsDomain, config }) => {
-  const baseUrl = `https://${analyticsDomain}/restapi/v2/workspaces/${encodeURIComponent(
+  const baseUrl = `https://${analyticsDomain}/restapi/v2/bulk/workspaces/${encodeURIComponent(
     workspace,
   )}/views/${encodeURIComponent(viewId)}`;
   const startUrl = `${baseUrl}/export`;
