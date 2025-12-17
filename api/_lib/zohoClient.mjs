@@ -111,6 +111,18 @@ const buildAuthHeaders = async (orgId, extra = {}) => {
 };
 
 const fetchZohoCsv = async (viewId) => {
+  try {
+    return await fetchZohoCsvSync(viewId);
+  } catch (error) {
+    const message = error.message || '';
+    if (message.includes('SYNC_EXPORT_NOT_ALLOWED')) {
+      return fetchZohoCsvAsync(viewId);
+    }
+    throw error;
+  }
+};
+
+const fetchZohoCsvSync = async (viewId) => {
   const orgId = requireEnv('ZOHO_ORG_ID');
   const workspace = requireEnv('ZOHO_WORKSPACE');
   const analyticsDomain = process.env.ZOHO_ANALYTICS_DOMAIN || 'analyticsapi.zoho.com';
@@ -120,7 +132,7 @@ const fetchZohoCsv = async (viewId) => {
   };
 
   const encodedConfig = encodeURIComponent(JSON.stringify(config));
-  const baseUrl = `https://${analyticsDomain}/restapi/v2/bulk/workspaces/${encodeURIComponent(
+  const baseUrl = `https://${analyticsDomain}/restapi/v2/workspaces/${encodeURIComponent(
     workspace,
   )}/views/${encodeURIComponent(viewId)}`;
   const url = `${baseUrl}/data?CONFIG=${encodedConfig}`;
@@ -136,19 +148,21 @@ const fetchZohoCsv = async (viewId) => {
 
   const errorText = await response.text();
   if (isSyncNotAllowedError(response.status, errorText)) {
-    return fetchZohoCsvAsync({
-      orgId,
-      workspace,
-      viewId,
-      analyticsDomain,
-      config,
-    });
+    throw new Error('SYNC_EXPORT_NOT_ALLOWED');
   }
 
   throw new Error(`Zoho export failed (${response.status}): ${errorText}`);
 };
 
-const fetchZohoCsvAsync = async ({ orgId, workspace, viewId, analyticsDomain, config }) => {
+const fetchZohoCsvAsync = async (viewId) => {
+  const orgId = requireEnv('ZOHO_ORG_ID');
+  const workspace = requireEnv('ZOHO_WORKSPACE');
+  const analyticsDomain = process.env.ZOHO_ANALYTICS_DOMAIN || 'analyticsapi.zoho.com';
+
+  const config = {
+    responseFormat: 'csv',
+  };
+
   const baseUrl = `https://${analyticsDomain}/restapi/v2/bulk/workspaces/${encodeURIComponent(
     workspace,
   )}/views/${encodeURIComponent(viewId)}`;
