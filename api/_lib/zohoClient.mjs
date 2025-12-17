@@ -82,34 +82,23 @@ const fetchZohoCsv = async (viewId) => {
   const orgId = requireEnv('ZOHO_ORG_ID');
   const workspace = requireEnv('ZOHO_WORKSPACE');
   const analyticsDomain = process.env.ZOHO_ANALYTICS_DOMAIN || 'analyticsapi.zoho.com';
-  const apiVersion = process.env.ZOHO_API_VERSION || '1.0';
 
-  const params = new URLSearchParams({
-    ZOHO_ACTION: 'EXPORT',
-    ZOHO_OUTPUT_FORMAT: 'CSV',
-    ZOHO_ERROR_FORMAT: 'JSON',
-    ZOHO_API_VERSION: apiVersion,
+  const config = JSON.stringify({
+    responseFormat: 'csv',
   });
 
-  const path = [
-    encodeURIComponent(orgId),
-    encodeURIComponent(workspace),
-    encodeURIComponent(viewId),
-    'data',
-  ].join('/');
+  const encodedConfig = encodeURIComponent(config);
+  const baseUrl = `https://${analyticsDomain}/restapi/v2/workspaces/${encodeURIComponent(
+    workspace,
+  )}/views/${encodeURIComponent(viewId)}/data`;
+  const url = `${baseUrl}?CONFIG=${encodedConfig}`;
 
-  const url = `https://${analyticsDomain}/api/${path}?${params.toString()}`;
-  // console.log('[ZohoAnalytics] Export request', {
-  //   orgId,
-  //   workspace,
-  //   viewId,
-  //   url,
-  // });
   const token = await getAccessToken();
 
   const response = await fetch(url, {
     headers: {
       Authorization: `Zoho-oauthtoken ${token}`,
+      'ZANALYTICS-ORGID': orgId,
     },
   });
 
