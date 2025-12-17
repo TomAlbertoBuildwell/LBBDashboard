@@ -124,6 +124,7 @@ const fetchZohoCsv = async (viewId) => {
     workspace,
   )}/views/${encodeURIComponent(viewId)}`;
   const url = `${baseUrl}/data?CONFIG=${encodedConfig}`;
+  console.log('[ZohoAnalytics] export URL', { url, workspace, viewId });
 
   const headers = await buildAuthHeaders(orgId);
 
